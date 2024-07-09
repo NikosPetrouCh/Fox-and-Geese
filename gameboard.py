@@ -4,6 +4,16 @@ class GameBoard:
     def __init__(self):
         self.board = self.create_board()
 
+    def to_dict(self):
+        return {
+            'board': self.board
+        }
+    @classmethod
+    def from_dict(cls, data):
+        obj = cls()
+        obj.board = data['board']
+        return obj
+
     def create_board(self):
         board = [[' ' for _ in range(9)] for _ in range(9)]
 
