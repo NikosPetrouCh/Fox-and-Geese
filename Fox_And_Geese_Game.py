@@ -1,4 +1,7 @@
-import pickle
+import json
+import time
+import keyboard
+import os
 import copy
 from fox_and_geese import FoxAndGeese, GameStatus
 
@@ -34,12 +37,26 @@ class MainMenu:
 
     def load_game(self):
         print("Loading a saved game...")
-        try:
-           game = Game.load_game_from_file('saved_game.pkl')
-           game.play_game()
-        except FileNotFoundError:
+        game = Game.load_game_from_file('saved_game.json')
+        if game:
+            self.replay_or_continue_game(game)
+        else:
             print("No saved game found. Starting a new game instead.")
             self.start_game()
+
+    def replay_or_continue_game(self, game):
+        print("Saved game loaded.")
+        print("1. Replay the game from the beginning")
+        print("2. Continue from where you left off")
+
+        choice = input("Select an option: ")
+        if choice == "1":
+            game.replay_game()
+        elif choice == "2":
+            game.play_game()
+        else:
+            print("Invalid choice. Continuing the game.")
+            game.play_game()
 
 class Game:
     def __init__(self):
@@ -58,49 +75,42 @@ class Game:
             print(f"{kicked_geese}/10 Geese")
 
             while True:
+                self.make_move()
+                print("Game is ongoing...")
+
                 if self.foxandgeese.current_player == 'F':
                     print("Fox's turn.")
+                    fox_position = self.foxandgeese.find_fox_position()
+                    user_input = input(f"Enter the end position of the fox: {fox_position}-")
                 else:
                     print("Geese's turn.")
+                    user_input = input("Enter the move (format: start_x,start_y-end_x,end_y): ")
 
-                user_start = input("Enter the starting position (format: start_x start_y): ")
-                if self.exit_game(user_start):
+                if self.exit_game(user_input):
                     return
-                if user_start.lower() == 'save':
+                if user_input.lower() == 'save':
                     self.save_game()
                     continue
-                if user_start.lower() == 'undo':
+                if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
 
-                user_start_sanitize = self.foxandgeese.sanitize_valid_input(user_start)
-                if user_start_sanitize == GameStatus.NOT_VALID_INPUT:
-                    print("This is not valid, you should give two numbers beteween 0 and 8.")
+                user_sanitize = self.foxandgeese.sanitize_valid_input(user_input)
+                if user_sanitize == GameStatus.NOT_VALID_INPUT:
+                    print("Invalid input. Please provide two pairs of numbers between 0 and 8 in the format: x1,y1-x2,y2.")
                     continue
-
                 break
 
-            while True:
-                user_end = input ("Enter the destination (end_x end_y):")
-                if self.exit_game(user_end):
-                    return
-                if user_end.lower() == 'save':
-                    self.save_game()
-                    continue
-                if user_end.lower() == 'undo':
-                    self.undo_move()
-                    continue
-
-                user_end_sanitize = self.foxandgeese.sanitize_valid_input(user_end)
-                if user_end_sanitize == GameStatus.NOT_VALID_INPUT:
-                    print("This is not valid input, you should give two numbers beteween 0 and 8.")
-                    continue
-
-                break
-
-            start_x, start_y = map(int, user_start.split())
-            end_x, end_y = map(int, user_end.split())
-            move_status = self.foxandgeese.logic_valid_move((start_x, start_y), (end_x, end_y))
+            if self.foxandgeese.current_player=='F':
+                fox_position = self.foxandgeese.find_fox_position()
+                start = tuple(map(int, fox_position.split(',')))
+                end = tuple(map(int, user_input.split(',')))
+                move_status = self.foxandgeese.logic_valid_move(start, end)
+            else:
+                start_end = user_input.split('-')
+                start = tuple(map(int, start_end[0].split(',')))
+                end = tuple(map(int, start_end[1].split(',')))
+                move_status = self.foxandgeese.logic_valid_move(start, end)
 
 
             self.push_to_undo()
@@ -109,21 +119,71 @@ class Game:
                 print("Invalid move. Try again.")
                 continue
 
-            current_move = self.foxandgeese.current_players_move(start_x, start_y, end_x, end_y)
+            current_move = self.foxandgeese.current_players_move(user_input)
 
             if current_move == GameStatus.FOX_MOVING:
-                self.foxandgeese.check_win()
                 if self.foxandgeese.check_win() == GameStatus.FOX_WIN:
                     self.foxandgeese.game_board.print_board()
                     print("The fox has won!")
                     break
             if current_move == GameStatus.GOOSE_MOVING:
-                self.foxandgeese.check_win()
                 if self.foxandgeese.check_win() == GameStatus.GEESE_WIN:
                     self.foxandgeese.game_board.print_board()
                     print("The geese have won! The fox is surrounded!")
                     break
 
+
+    def replay_game(self):
+            print("Replaying the game...")
+            replay_moves = self.foxandgeese.move_history.copy()
+            self.foxandgeese.reset_game()
+
+            move_index = 0
+
+            while move_index < len(replay_moves):
+                os.system('cls' if os.name == 'nt' else 'clear')
+                self.foxandgeese.game_board.print_board()
+
+                move = replay_moves[move_index]
+                sx, sy = move[0]
+                ex, ey = move[1]
+
+                if self.foxandgeese.current_player == 'F':
+                    self.foxandgeese.fox_move(sx, sy, ex, ey)
+                else:
+                    self.foxandgeese.geese_move(sx, sy, ex, ey)
+
+                move_index += 1
+
+                print(f"Kicked out geese: {self.foxandgeese.geese_kicked}/10")
+                print(f"Move {move_index}: {move}")
+                print("Press the space bar to see the next move...")
+
+                while True:
+                    if keyboard.is_pressed('space'):
+                        while keyboard.is_pressed('space'):
+                            time.sleep(0.1)
+                        break
+                    time.sleep(0.1)
+
+            os.system('cls' if os.name == 'nt' else 'clear')
+            self.foxandgeese.game_board.print_board()
+
+            print("Replay finished. Returning to the last game state.")
+            self.foxandgeese.move_history = replay_moves
+
+            print("Press the space bar to continue playing...")
+            while True:
+                if keyboard.is_pressed('space'):
+                    while keyboard.is_pressed('space'):
+                        time.sleep(0.1)
+                    break
+                time.sleep(0.1)
+
+            self.play_game()
+
+    def make_move(self):
+        pass
 
     def undo_move(self):
         if self.last_state:
@@ -136,19 +196,30 @@ class Game:
     def push_to_undo(self):
         self.last_state = copy.deepcopy(self.__dict__)
 
-    def save_game(self, filename = 'saved_game.pkl'):
+
+    def save_game(self, filename='saved_game.json'):
         print("Saving the game...")
-        with open(filename, 'wb') as file:
-            pickle.dump(self, file)
+        game_state = self.foxandgeese.to_dict()
+        with open(filename, 'w') as file:
+            json.dump(game_state, file, indent=4)
         print("Game saved.")
 
-
     @staticmethod
-    def load_game_from_file(filename='saved_game.pkl'):
+    def load_game_from_file(filename='saved_game.json'):
         print("Loading the game...")
-        with open(filename, 'rb') as file:
-            return pickle.load(file)
-        print("Game loaded.")
+        try:
+            with open(filename, 'r') as file:
+                game_state = json.load(file)
+            game = Game()
+            game.foxandgeese = FoxAndGeese.from_dict(game_state)
+            print("Game loaded")
+            return game
+        except FileNotFoundError:
+            print("No saved game found.")
+            return None
+        except Exception as e:
+            print(f"An error occurred while loading the game: {e}")
+            return None
 
 
     def exit_game(self, command):
@@ -162,7 +233,6 @@ try:
     game_try.show_menu()
 except KeyboardInterrupt:
     print("\nGoodbye! Game interrupted!")
-
 
 
 
